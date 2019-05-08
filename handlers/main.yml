@@ -1,0 +1,4 @@
+---
+# handlers file for ldapclient
+- name: restart nslcd
+  service: name=nslcd state=restarted

@@ -1,0 +1,186 @@
+---
+# tasks file for ldapclient
+- name: install packages
+  package:
+    name:
+      - openldap
+      - nss-pam-ldapd
+    state: present
+
+- name: configure LDAP search base
+  lineinfile:
+    path: /etc/openldap/ldap.conf
+    regexp: "^BASE"
+    line: "BASE   {{ ldap_base }}"
+
+- name: configure LDAP URI
+  lineinfile:
+    path: /etc/openldap/ldap.conf
+    regexp: "^URI"
+    line: "URI    {{ ldap_protocol }}://{{ ldap_server }}"
+
+- name: configure LDAP search base in /etc/nslcd.conf
+  lineinfile:
+    path: /etc/nslcd.conf
+    regexp: "^base"
+    line: "base {{ ldap_base }}"
+  notify: restart nslcd
+
+- name: configure LDAP URI in /etc/nslcd.conf
+  lineinfile:
+    path: /etc/nslcd.conf
+    regexp: "^uri"
+    line: "uri {{ ldap_protocol }}://{{ ldap_server }}"
+  notify: restart nslcd
+
+
+- name: add ldap to passwd in nsswitch
+  lineinfile:
+    path: /etc/nsswitch.conf
+    regexp: "^passwd:"
+    line: "passwd: ldap files mymachines systemd"
+  notify: restart nslcd
+
+- name: add ldap to group in nsswitch
+  lineinfile:
+    path: /etc/nsswitch.conf
+    regexp: "^group:"
+    line: "group: ldap files mymachines systemd"
+  notify: restart nslcd
+
+- name: add ldap to shadow in nsswitch
+  lineinfile:
+    path: /etc/nsswitch.conf
+    regexp: "^shadow:"
+    line: "shadow: ldap files"
+  notify: restart nslcd
+
+- name: configure nslcd service
+  service: name=nslcd state=started enabled=true
+
+- name: Configure system-auth for LDAP
+  pamd:
+    name: system-auth
+    type: "{{ item }}"
+    control: required
+    module_path: pam_unix.so
+    new_type: "{{ item }}"
+    new_control: sufficient
+    new_module_path: pam_ldap.so
+    state: before
+  loop:
+    - auth
+    - account
+    - password
+
+- name: Configure system-auth session for LDAP
+  pamd:
+    name: system-auth
+    type: session
+    control: required
+    module_path: pam_unix.so
+    new_type: session
+    new_control: optional
+    new_module_path: pam_ldap.so
+    state: after
+
+- name: Configure su for LDAP
+  pamd:
+    name: su
+    type: "{{ item }}"
+    control: required
+    module_path: pam_unix.so
+    new_type: "{{ item }}"
+    new_control: sufficient
+    new_module_path: pam_ldap.so
+    state: before
+  loop:
+    - auth
+    - account
+    - password
+    - session
+
+- name: Update pam_unix line with use_first_pass
+  pamd:
+    name: su
+    type: auth
+    control: required
+    module_path: pam_unix.so
+    module_arguments: 'use_first_pass'
+    state: updated
+
+- name: Configure su-l for LDAP
+  pamd:
+    name: su-l
+    type: "{{ item }}"
+    control: required
+    module_path: pam_unix.so
+    new_type: "{{ item }}"
+    new_control: sufficient
+    new_module_path: pam_ldap.so
+    state: before
+  loop:
+    - auth
+    - account
+    - password
+    - session
+
+- name: Update pam_unix line with use_first_pass
+  pamd:
+    name: su-l
+    type: auth
+    control: required
+    module_path: pam_unix.so
+    module_arguments: 'use_first_pass'
+    state: updated
+
+- name: Configure passwd for LDAP
+  pamd:
+    name: passwd
+    type: password
+    control: required
+    module_path: pam_unix.so
+    new_type: password
+    new_control: sufficient
+    new_module_path: pam_ldap.so
+    state: before
+
+- name: Configure system-login to create home directories at login
+  pamd:
+    name: system-login
+    type: session
+    control: required
+    module_path: pam_env.so
+    new_type: session
+    new_control: required
+    new_module_path: pam_mkhomedir.so
+    state: after
+
+- name: Configure su-l to create home directories at login
+  pamd:
+    name: su-l
+    type: session
+    control: required
+    module_path: pam_ldap.so
+    new_type: session
+    new_control: required
+    new_module_path: pam_mkhomedir.so
+    state: before
+
+- name: Configure system-login to create home directories at login
+  pamd:
+    name: system-login
+    type: session
+    control: required
+    module_path: pam_mkhomedir.so
+    module_arguments: 'skel=/etc/skel umask=0022'
+    state: updated
+
+- name: Configure su-l to create home directories at login
+  pamd:
+    name: su-l
+    type: session
+    control: required
+    module_path: pam_mkhomedir.so
+    module_arguments: 'skel=/etc/skel umask=0022'
+    state: updated
